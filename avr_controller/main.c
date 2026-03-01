@@ -42,6 +42,7 @@ typedef enum
 {
     AUTONOMOUS = 0,
     TELEOPERATOR = 1,
+    VELOCITY_STREAM = 2,
 } controlMode;
 static uint8_t control_mode = AUTONOMOUS;
 
@@ -67,6 +68,31 @@ static uint8_t last_command = 0;
 static uint8_t current_command =0;
 
 static bool f, b, l, r;
+
+/* ---------- VELOCITY_STREAM state ---------- */
+static float vs_target_lin  = 0.0f;   /* target linear vel  (mm/s)  */
+static float vs_target_ang  = 0.0f;   /* target angular vel (deg/s) */
+static float vs_current_lin = 0.0f;   /* ramped linear cmd  (mm/s)  */
+static float vs_current_ang = 0.0f;   /* ramped angular cmd (deg/s) */
+static uint64_t vs_last_cmd_us = 0;   /* timestamp of last valid cmd */
+
+/* ---------- VELOCITY_STREAM helpers ---------- */
+/* Ramp 'current' toward 'target' by at most 'max_step' per call. */
+static float slew_rate_limit(float current, float target, float max_step)
+{
+    float diff = target - current;
+    if (diff >  max_step) diff =  max_step;
+    if (diff < -max_step) diff = -max_step;
+    return current + diff;
+}
+
+static void vs_reset(void)
+{
+    vs_target_lin  = 0.0f;
+    vs_target_ang  = 0.0f;
+    vs_current_lin = 0.0f;
+    vs_current_ang = 0.0f;
+}
 
 /* -------------------------------  PROTOTYPES ----------------------------*/
 static void timer4_init(void);                            /* sets up periodic IRQ            */
@@ -185,6 +211,42 @@ int main(void)
                     else
                     {
 	                    motors_update(motion_velocity(), motion_omega());
+                    }
+                }
+                else if (control_mode == VELOCITY_STREAM)
+                {
+                    /* ---- watchdog: check command freshness ---- */
+                    uint64_t age_us = micros64() - vs_last_cmd_us;
+                    bool cmd_fresh = (age_us < (uint64_t)VSTREAM_TIMEOUT_MS * 1000ULL);
+
+                    if (!cmd_fresh)
+                    {
+                        /* stale command -> ramp targets to zero */
+                        vs_target_lin = 0.0f;
+                        vs_target_ang = 0.0f;
+                    }
+
+                    /* ---- slew-rate-limited ramping ---- */
+                    float dt_s   = (float)LOOP_TIME * 0.001f;  /* 10 ms */
+                    float lin_step = VSTREAM_LIN_ACC * dt_s;
+                    float ang_step = VSTREAM_ANG_ACC * dt_s;
+
+                    vs_current_lin = slew_rate_limit(vs_current_lin,
+                                                     vs_target_lin, lin_step);
+                    vs_current_ang = slew_rate_limit(vs_current_ang,
+                                                     vs_target_ang, ang_step);
+
+                    /* ---- drive motors ---- */
+                    motors_update(vs_current_lin, vs_current_ang);
+
+                    /* ---- if fully stopped after timeout, disable ---- */
+                    if (!cmd_fresh
+                        && fabsf(vs_current_lin) < 0.5f
+                        && fabsf(vs_current_ang) < 0.5f)
+                    {
+                        vs_current_lin = 0.0f;
+                        vs_current_ang = 0.0f;
+                        motors_stop_all();
                     }
                 }
             }
@@ -369,6 +431,27 @@ static uint8_t parse_jetson(const char *line)
         l = temp3;
         r = temp4;
     }
+    else if (control_mode == VELOCITY_STREAM)
+    {
+        /* Re-parse with the simpler 4-field format:
+           "2,<debug>,<lin_mmps>,<ang_dps>"             */
+        float lin_f = 0.0f, ang_f = 0.0f;
+        uint8_t cm_tmp, dm_tmp;
+        int n = sscanf(line, "%hhu,%hhu,%f,%f",
+                       &cm_tmp, &dm_tmp, &lin_f, &ang_f);
+        if (n >= 4)
+        {
+            /* clamp to safe limits */
+            if (lin_f >  VSTREAM_MAX_LIN_VEL) lin_f =  VSTREAM_MAX_LIN_VEL;
+            if (lin_f < -VSTREAM_MAX_LIN_VEL) lin_f = -VSTREAM_MAX_LIN_VEL;
+            if (ang_f >  VSTREAM_MAX_ANG_VEL) ang_f =  VSTREAM_MAX_ANG_VEL;
+            if (ang_f < -VSTREAM_MAX_ANG_VEL) ang_f = -VSTREAM_MAX_ANG_VEL;
+
+            vs_target_lin  = lin_f;
+            vs_target_ang  = ang_f;
+            vs_last_cmd_us = micros64();
+        }
+    }
 
     return cnt;
 }
@@ -395,6 +478,8 @@ static void receive_from_jetson(void)
 
                     if (control_mode == AUTONOMOUS)
                     {
+                        vs_reset(); /* clear velocity-stream state on mode switch */
+
                         if (rx_distance != 0 && rx_angle != 0)
                         {
                             determineFinishnes = BOTH;
@@ -423,6 +508,8 @@ static void receive_from_jetson(void)
                     }
                     else if (control_mode == TELEOPERATOR)
                     {
+                        vs_reset(); /* clear velocity-stream state on mode switch */
+
                         current_command = (f << 3) | (b << 2) | (l << 1) | r;
 						
 						bool need_new_profile =
@@ -491,6 +578,12 @@ static void receive_from_jetson(void)
                         }
 
                         last_command = current_command;
+                    }
+                    else if (control_mode == VELOCITY_STREAM)
+                    {
+                        /* targets & timestamp already set in parse_jetson.
+                           Ensure motors are enabled on entry.              */
+                        motors_enable_all(true);
                     }
                 }
 

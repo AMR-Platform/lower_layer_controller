@@ -83,7 +83,7 @@ The tele-operator logic is a compact Mealy machine with **four states** and **fo
 3. **`CONSTANT`** → cruise at steady velocity  
 4. **`DECELERATING`** → brake to a smooth stop  
 
-![Alt text](images/state.jpg)
+![State Machine](images/state.jpg)
 
 Each new key-press combination (`f b l r`) triggers a transition. The handler decides whether to regenerate a fresh profile or decelerate gently before accepting the next command—keeping ride smooth and preventing stepper stalls.
 
@@ -170,4 +170,4 @@ For questions, open an issue or email **kiran.gunathilaka&nbsp;[at]&nbsp;example
 
 All the locations are respect to my machine. change accordingly
 
-C:\Users\META\AppData\Local\Arduino15\packages\arduino\tools\avrdude\6.3.0-arduino17/bin/avrdude.exe -C"C:\Users\META\AppData\Local\Arduino15\packages\arduino\tools\avrdude\6.3.0-arduino17/etc/avrdude.conf" -v -V -patmega32u4 -cavr109 "-PCOM14" -b57600 -D -Uflash:w:"D:\Downloads\AMR\GithubOrg\lower_layer_controller\avr_controller\Debug\avr_controller.hex":i
+C:\Users\META\AppData\Local\Arduino15\packages\arduino\tools\avrdude\6.3.0-arduino17/bin/avrdude.exe -C"C:\Users\META\AppData\Local\Arduino15\packages\arduino\tools\avrdude\6.3.0-arduino17/etc/avrdude.conf" -v -V -patmega32u4 -cavr109 "-PCOM5" -b57600 -D -Uflash:w:"D:\Downloads\AMR\GithubOrg\lower_layer_controller\avr_controller\Debug\avr_controller.hex":i

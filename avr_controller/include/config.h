@@ -230,4 +230,11 @@
 #define TELEOP_ACC           200.0f    // mm/s� - Linear acceleration
 #define TELEOP_ALPHA         30.0f    // deg/s� - Angular acceleration
 
+/* ================= VELOCITY STREAM MODE (ROS 2 prep) ================= */
+#define VSTREAM_TIMEOUT_MS       250      /* stop if no command for 250 ms   */
+#define VSTREAM_MAX_LIN_VEL      500.0f   /* mm/s  - absolute clamp         */
+#define VSTREAM_MAX_ANG_VEL      120.0f   /* deg/s - absolute clamp         */
+#define VSTREAM_LIN_ACC          400.0f   /* mm/s^2 - slew-rate limit        */
+#define VSTREAM_ANG_ACC          200.0f   /* deg/s^2 - slew-rate limit       */
+
 #endif // CONFIG_H
